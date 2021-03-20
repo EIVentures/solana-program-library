@@ -6,6 +6,11 @@ https://travis-ci.org/solana-labs/solana-program-library.svg?branch=master
 
 # Solana Program Library
 
+NOTE: This is a modified version of the SPL, with some changes suited for projects
+(e.g. Hedgehog), such as adding the ability to disable swaps, and allowing a per-swap
+fee structure (currently the deployed swap program fixes the fee settings at the
+program level, with its `SWAP_CONSTRAINTS` constant).
+
 The Solana Program Library (SPL) is a collection of on-chain programs targeting
 the [Sealevel parallel
 runtime](https://medium.com/solana-labs/sealevel-parallel-processing-thousands-of-smart-contracts-d814b378192).
