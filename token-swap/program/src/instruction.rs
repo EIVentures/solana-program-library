@@ -92,12 +92,18 @@ pub struct WithdrawSingleTokenTypeExactAmountOut {
     pub maximum_pool_token_amount: u64,
 }
 
-#[cfg_attr(feature = "fuzz", derive(Arbitrary))]
+/// ToggleSwap instruction data.
 #[repr(C)]
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct ToggleSwap {
     /// Whether to enable or disable trading.
     pub is_trading: bool,
+
+    /// Fees for the swap. Should match the initialized fees.
+    pub fees: Fees,
+
+    /// Swap curve. Should match the initialized swap curve.
+    pub swap_curve: SwapCurve,
 }
 
 /// Instructions supported by the token swap program.
@@ -270,15 +276,27 @@ impl SwapInstruction {
             }
             6 => {
                 let (&is_trading, _rest) = rest.split_first().ok_or(SwapError::InvalidInstruction)?;
-                match is_trading {
-                    0 => Self::ToggleSwap(ToggleSwap {
-                        is_trading: false,
-                    }),
-                    1 => Self::ToggleSwap(ToggleSwap {
-                        is_trading: true,
-                    }),
-                    _ => return Err(SwapError::InvalidInstruction.into()),
+                if rest.len() >= Fees::LEN {
+                    let (fees, rest) = rest.split_at(Fees::LEN);
+                    let fees = Fees::unpack_unchecked(fees)?;
+                    let swap_curve = SwapCurve::unpack_unchecked(rest)?;
+                    match is_trading {
+                        0 => Self::ToggleSwap(ToggleSwap {
+                            is_trading: false,
+                            fees,
+                            swap_curve
+                        }),
+                        1 => Self::ToggleSwap(ToggleSwap {
+                            is_trading: true,
+                            fees,
+                            swap_curve
+                        }),
+                        _ => return Err(SwapError::InvalidInstruction.into()),
+                    }
+                } else {
+                    return Err(SwapError::InvalidInstruction.into());
                 }
+                
             }
             _ => return Err(SwapError::InvalidInstruction.into()),
         })
@@ -363,13 +381,21 @@ impl SwapInstruction {
                 buf.extend_from_slice(&maximum_pool_token_amount.to_le_bytes());
             }
             Self::ToggleSwap(ToggleSwap {
-                is_trading
+                is_trading,
+                fees,
+                swap_curve,
             }) => {
                 buf.push(6);
                 match is_trading {
                     false => buf.push(0),
                     true => buf.push(1)
                 };
+                let mut fees_slice = [0u8; Fees::LEN];
+                Pack::pack_into_slice(fees, &mut fees_slice[..]);
+                buf.extend_from_slice(&fees_slice);
+                let mut swap_curve_slice = [0u8; SwapCurve::LEN];
+                Pack::pack_into_slice(swap_curve, &mut swap_curve_slice[..]);
+                buf.extend_from_slice(&swap_curve_slice);
             }
         }
         buf
@@ -614,7 +640,7 @@ pub fn toggle_swap(
 ) -> Result<Instruction, ProgramError> {
     let data = SwapInstruction::ToggleSwap(instruction).pack();
 
-    let mut accounts = vec![
+    let accounts = vec![
         AccountMeta::new(*swap_pubkey, false),
         AccountMeta::new_readonly(*trading_authority_pubkey, true),
     ];
