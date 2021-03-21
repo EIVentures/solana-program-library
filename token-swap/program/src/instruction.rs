@@ -275,7 +275,7 @@ impl SwapInstruction {
                 })
             }
             6 => {
-                let (&is_trading, _rest) = rest.split_first().ok_or(SwapError::InvalidInstruction)?;
+                let (&is_trading, rest) = rest.split_first().ok_or(SwapError::InvalidInstruction)?;
                 if rest.len() >= Fees::LEN {
                     let (fees, rest) = rest.split_at(Fees::LEN);
                     let fees = Fees::unpack_unchecked(fees)?;
