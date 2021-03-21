@@ -91,6 +91,9 @@ pub enum SwapError {
     /// The operation cannot be performed on the given curve
     #[error("The operation cannot be performed on the given curve")]
     UnsupportedCurveOperation,
+    /// The swap is closed for trading
+    #[error("The swap is closed for trading")]
+    SwapClosed,
 }
 impl From<SwapError> for ProgramError {
     fn from(e: SwapError) -> Self {

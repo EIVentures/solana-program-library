@@ -92,6 +92,14 @@ pub struct WithdrawSingleTokenTypeExactAmountOut {
     pub maximum_pool_token_amount: u64,
 }
 
+#[cfg_attr(feature = "fuzz", derive(Arbitrary))]
+#[repr(C)]
+#[derive(Clone, Debug, PartialEq)]
+pub struct ToggleSwap {
+    /// Whether to enable or disable trading.
+    pub is_trading: bool,
+}
+
 /// Instructions supported by the token swap program.
 #[repr(C)]
 #[derive(Debug, PartialEq)]
@@ -108,6 +116,7 @@ pub enum SwapInstruction {
     ///   6. `[writable]` Pool Token Account to deposit the initial pool token
     ///   supply.  Must be empty, not owned by swap authority.
     ///   7. '[]` Token program id
+    ///   8. `[]` The trading authority (that will set is_trading).
     Initialize(Initialize),
 
     ///   Swap the tokens in the pool.
@@ -187,6 +196,12 @@ pub enum SwapInstruction {
     ///   8. `[writable]` Fee account, to receive withdrawal fees
     ///   9. '[]` Token program id
     WithdrawSingleTokenTypeExactAmountOut(WithdrawSingleTokenTypeExactAmountOut),
+
+    ///   Toggles whether swapping is allowed or disallowed.
+    /// 
+    ///   0. `[writable]` Token-swap.
+    ///   1. `[signer]` The trading authority.
+    ToggleSwap(ToggleSwap),
 }
 
 impl SwapInstruction {
@@ -252,6 +267,18 @@ impl SwapInstruction {
                     destination_token_amount,
                     maximum_pool_token_amount,
                 })
+            }
+            6 => {
+                let (&is_trading, _rest) = rest.split_first().ok_or(SwapError::InvalidInstruction)?;
+                match is_trading {
+                    0 => Self::ToggleSwap(ToggleSwap {
+                        is_trading: false,
+                    }),
+                    1 => Self::ToggleSwap(ToggleSwap {
+                        is_trading: true,
+                    }),
+                    _ => return Err(SwapError::InvalidInstruction.into()),
+                }
             }
             _ => return Err(SwapError::InvalidInstruction.into()),
         })
@@ -334,6 +361,15 @@ impl SwapInstruction {
                 buf.push(5);
                 buf.extend_from_slice(&destination_token_amount.to_le_bytes());
                 buf.extend_from_slice(&maximum_pool_token_amount.to_le_bytes());
+            }
+            Self::ToggleSwap(ToggleSwap {
+                is_trading
+            }) => {
+                buf.push(6);
+                match is_trading {
+                    false => buf.push(0),
+                    true => buf.push(1)
+                };
             }
         }
         buf
@@ -561,6 +597,27 @@ pub fn swap(
     if let Some(host_fee_pubkey) = host_fee_pubkey {
         accounts.push(AccountMeta::new(*host_fee_pubkey, false));
     }
+
+    Ok(Instruction {
+        program_id: *program_id,
+        accounts,
+        data,
+    })
+}
+
+/// Creates a `toggle_swap` instruction.
+pub fn toggle_swap(
+    program_id: &Pubkey,
+    swap_pubkey: &Pubkey,
+    trading_authority_pubkey: &Pubkey,
+    instruction: ToggleSwap,
+) -> Result<Instruction, ProgramError> {
+    let data = SwapInstruction::ToggleSwap(instruction).pack();
+
+    let mut accounts = vec![
+        AccountMeta::new(*swap_pubkey, false),
+        AccountMeta::new_readonly(*trading_authority_pubkey, true),
+    ];
 
     Ok(Instruction {
         program_id: *program_id,
