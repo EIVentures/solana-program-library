@@ -11,6 +11,7 @@ use crate::{
     instruction::{
         DepositAllTokenTypes, DepositSingleTokenTypeExactAmountIn, Initialize, Swap,
         SwapInstruction, WithdrawAllTokenTypes, WithdrawSingleTokenTypeExactAmountOut,
+        ToggleSwap
     },
     state::{SwapState, SwapV1, SwapVersion},
 };
@@ -220,6 +221,7 @@ impl Processor {
         let fee_account_info = next_account_info(account_info_iter)?;
         let destination_info = next_account_info(account_info_iter)?;
         let token_program_info = next_account_info(account_info_iter)?;
+        let trading_authority = next_account_info(account_info_iter)?;
 
         let token_program_id = *token_program_info.key;
         if SwapVersion::is_initialized(&swap_info.data.borrow()) {
@@ -317,6 +319,8 @@ impl Processor {
             pool_fee_account: *fee_account_info.key,
             fees,
             swap_curve,
+            is_trading: true,
+            trading_authority: *trading_authority.key,
         });
         SwapVersion::pack(obj, &mut swap_info.data.borrow_mut())?;
         Ok(())
@@ -377,6 +381,9 @@ impl Processor {
         }
         if *token_program_info.key != *token_swap.token_program_id() {
             return Err(SwapError::IncorrectTokenProgramId.into());
+        }
+        if !token_swap.is_trading() {
+            return Err(SwapError::SwapClosed.into());
         }
 
         let source_account =
@@ -992,6 +999,46 @@ impl Processor {
         Ok(())
     }
 
+    /// Processes a [ToggleSwap](enum.Instruction.html).
+    pub fn process_toggle_swap(
+        is_trading: bool,
+        accounts: &[AccountInfo],
+    ) -> ProgramResult {
+        let account_info_iter = &mut accounts.iter();
+        let swap_info = next_account_info(account_info_iter)?;
+        let trading_authority = next_account_info(account_info_iter)?;
+
+        if !trading_authority.is_signer {
+            return Err(ProgramError::MissingRequiredSignature);
+        }
+
+        let token_swap = SwapVersion::unpack(&swap_info.data.borrow())?;
+
+        if trading_authority.key != token_swap.trading_authority() {
+            return Err(ProgramError::InvalidAccountData);
+        }
+
+        let obj = SwapVersion::SwapV1(SwapV1 {
+            is_initialized: token_swap.is_initialized(),
+            nonce: token_swap.nonce(),
+            token_program_id: *token_swap.token_program_id(),
+            token_a: *token_swap.token_a_account(),
+            token_b: *token_swap.token_b_account(),
+            pool_mint: *token_swap.pool_mint(),
+            token_a_mint: *token_swap.token_a_mint(),
+            token_b_mint: *token_swap.token_b_mint(),
+            pool_fee_account: *token_swap.pool_fee_account(),
+            fees: token_swap.fees().clone(),
+            swap_curve: token_swap.swap_curve().clone(),
+            is_trading: is_trading,
+            trading_authority: *token_swap.trading_authority(),
+        });
+
+        SwapVersion::pack(obj, &mut swap_info.data.borrow_mut())?;
+
+        Ok(())
+    }
+
     /// Processes an [Instruction](enum.Instruction.html).
     pub fn process(program_id: &Pubkey, accounts: &[AccountInfo], input: &[u8]) -> ProgramResult {
         Self::process_with_constraints(program_id, accounts, input, &SWAP_CONSTRAINTS)
@@ -1084,6 +1131,12 @@ impl Processor {
                     accounts,
                 )
             }
+            SwapInstruction::ToggleSwap(ToggleSwap {
+                is_trading,
+            }) => {
+                msg!("Instruction: ToggleSwap");
+                Self::process_toggle_swap(is_trading, accounts)
+            }
         }
     }
 }
@@ -1151,6 +1204,9 @@ impl PrintProgramError for SwapError {
             }
             SwapError::UnsupportedCurveOperation => {
                 msg!("Error: The operation cannot be performed on the given curve")
+            }
+            SwapError::SwapClosed => {
+                msg!("Error: The swap is closed for trading")
             }
         }
     }

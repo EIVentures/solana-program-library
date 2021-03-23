@@ -14,6 +14,7 @@ fuzz = ["arbitrary"]
 
 [dependencies]
 arrayref = "0.3.6"
+dyn-clone = "1.0.4"
 enum_dispatch = "0.3.4"
 num-derive = "0.3"
 num-traits = "0.2"
