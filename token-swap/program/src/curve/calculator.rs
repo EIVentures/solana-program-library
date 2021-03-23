@@ -1,5 +1,5 @@
 //! Swap calculations
-
+use dyn_clone::{clone_trait_object, DynClone};
 use {crate::error::SwapError, spl_math::precise_number::PreciseNumber, std::fmt::Debug};
 
 /// Initial amount of pool tokens for swap contract, hard-coded to something
@@ -79,8 +79,10 @@ pub trait DynPack {
     fn pack_into_slice(&self, dst: &mut [u8]);
 }
 
+clone_trait_object!(CurveCalculator);
+
 /// Trait representing operations required on a swap curve
-pub trait CurveCalculator: Debug + DynPack {
+pub trait CurveCalculator: Debug + DynPack + DynClone {
     /// Calculate how much destination token will be provided given an amount
     /// of source token.
     fn swap_without_fees(

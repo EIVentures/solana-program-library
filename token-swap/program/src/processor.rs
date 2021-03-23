@@ -1002,8 +1002,6 @@ impl Processor {
     /// Processes a [ToggleSwap](enum.Instruction.html).
     pub fn process_toggle_swap(
         is_trading: bool,
-        fees: Fees,
-        swap_curve: SwapCurve,
         accounts: &[AccountInfo],
     ) -> ProgramResult {
         let account_info_iter = &mut accounts.iter();
@@ -1020,10 +1018,6 @@ impl Processor {
             return Err(ProgramError::InvalidAccountData);
         }
 
-        if *token_swap.fees() != fees || *token_swap.swap_curve() != swap_curve {
-            return Err(SwapError::IncorrectSwapAccount.into());
-        }
-
         let obj = SwapVersion::SwapV1(SwapV1 {
             is_initialized: token_swap.is_initialized(),
             nonce: token_swap.nonce(),
@@ -1034,8 +1028,8 @@ impl Processor {
             token_a_mint: *token_swap.token_a_mint(),
             token_b_mint: *token_swap.token_b_mint(),
             pool_fee_account: *token_swap.pool_fee_account(),
-            fees,
-            swap_curve,
+            fees: token_swap.fees().clone(),
+            swap_curve: token_swap.swap_curve().clone(),
             is_trading: is_trading,
             trading_authority: *token_swap.trading_authority(),
         });
@@ -1139,11 +1133,9 @@ impl Processor {
             }
             SwapInstruction::ToggleSwap(ToggleSwap {
                 is_trading,
-                fees,
-                swap_curve
             }) => {
                 msg!("Instruction: ToggleSwap");
-                Self::process_toggle_swap(is_trading, fees, swap_curve, accounts)
+                Self::process_toggle_swap(is_trading, accounts)
             }
         }
     }

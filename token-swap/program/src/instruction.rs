@@ -98,12 +98,6 @@ pub struct WithdrawSingleTokenTypeExactAmountOut {
 pub struct ToggleSwap {
     /// Whether to enable or disable trading.
     pub is_trading: bool,
-
-    /// Fees for the swap. Should match the initialized fees.
-    pub fees: Fees,
-
-    /// Swap curve. Should match the initialized swap curve.
-    pub swap_curve: SwapCurve,
 }
 
 /// Instructions supported by the token swap program.
@@ -275,28 +269,16 @@ impl SwapInstruction {
                 })
             }
             6 => {
-                let (&is_trading, rest) = rest.split_first().ok_or(SwapError::InvalidInstruction)?;
-                if rest.len() >= Fees::LEN {
-                    let (fees, rest) = rest.split_at(Fees::LEN);
-                    let fees = Fees::unpack_unchecked(fees)?;
-                    let swap_curve = SwapCurve::unpack_unchecked(rest)?;
-                    match is_trading {
-                        0 => Self::ToggleSwap(ToggleSwap {
-                            is_trading: false,
-                            fees,
-                            swap_curve
-                        }),
-                        1 => Self::ToggleSwap(ToggleSwap {
-                            is_trading: true,
-                            fees,
-                            swap_curve
-                        }),
-                        _ => return Err(SwapError::InvalidInstruction.into()),
-                    }
-                } else {
-                    return Err(SwapError::InvalidInstruction.into());
+                let (&is_trading, _rest) = rest.split_first().ok_or(SwapError::InvalidInstruction)?;
+                match is_trading {
+                    0 => Self::ToggleSwap(ToggleSwap {
+                        is_trading: false,
+                    }),
+                    1 => Self::ToggleSwap(ToggleSwap {
+                        is_trading: true,
+                    }),
+                    _ => return Err(SwapError::InvalidInstruction.into()),
                 }
-                
             }
             _ => return Err(SwapError::InvalidInstruction.into()),
         })
@@ -382,20 +364,12 @@ impl SwapInstruction {
             }
             Self::ToggleSwap(ToggleSwap {
                 is_trading,
-                fees,
-                swap_curve,
             }) => {
                 buf.push(6);
                 match is_trading {
                     false => buf.push(0),
                     true => buf.push(1)
                 };
-                let mut fees_slice = [0u8; Fees::LEN];
-                Pack::pack_into_slice(fees, &mut fees_slice[..]);
-                buf.extend_from_slice(&fees_slice);
-                let mut swap_curve_slice = [0u8; SwapCurve::LEN];
-                Pack::pack_into_slice(swap_curve, &mut swap_curve_slice[..]);
-                buf.extend_from_slice(&swap_curve_slice);
             }
         }
         buf
