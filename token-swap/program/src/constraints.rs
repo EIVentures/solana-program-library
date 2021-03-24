@@ -44,7 +44,15 @@ impl<'a> SwapConstraints<'a> {
 
     /// Checks that the provided curve is valid for the given constraints
     pub fn validate_fees(&self, fees: &Fees) -> Result<(), ProgramError> {
-        if self.fees == fees {
+        // The owner and host fees are fixed. The trade fees can be variable
+        // depending on the swap.
+        if self.fees.owner_trade_fee_numerator == fees.owner_trade_fee_numerator
+            && self.fees.owner_trade_fee_denominator == fees.owner_trade_fee_denominator
+            && self.fees.owner_withdraw_fee_numerator == fees.owner_withdraw_fee_numerator
+            && self.fees.owner_withdraw_fee_denominator == fees.owner_withdraw_fee_denominator
+            && self.fees.host_fee_numerator == fees.host_fee_numerator
+            && self.fees.host_fee_denominator == fees.host_fee_denominator
+        {
             Ok(())
         } else {
             Err(SwapError::InvalidFee.into())
