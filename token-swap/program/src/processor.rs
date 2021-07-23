@@ -28,6 +28,7 @@ use solana_program::{
     pubkey::Pubkey,
 };
 use std::convert::TryInto;
+use solana_program::bpf_loader_upgradeable::UpgradeableLoaderState::Program;
 
 /// Program state handler.
 pub struct Processor {}
@@ -209,6 +210,7 @@ impl Processor {
         nonce: u8,
         fees: Fees,
         swap_curve: SwapCurve,
+        collateral_program_id: Pubkey,
         accounts: &[AccountInfo],
         swap_constraints: &Option<SwapConstraints>,
     ) -> ProgramResult {
@@ -321,6 +323,7 @@ impl Processor {
             swap_curve,
             is_trading: true,
             trading_authority: *trading_authority.key,
+            collateral_pda: collateral_program_id
         });
         SwapVersion::pack(obj, &mut swap_info.data.borrow_mut())?;
         Ok(())
@@ -334,6 +337,7 @@ impl Processor {
         accounts: &[AccountInfo],
     ) -> ProgramResult {
         let account_info_iter = &mut accounts.iter();
+        let collateral_pda_account = next_account_info(account_info_iter)?;
         let swap_info = next_account_info(account_info_iter)?;
         let authority_info = next_account_info(account_info_iter)?;
         let user_transfer_authority_info = next_account_info(account_info_iter)?;
@@ -349,6 +353,10 @@ impl Processor {
             return Err(ProgramError::IncorrectProgramId);
         }
         let token_swap = SwapVersion::unpack(&swap_info.data.borrow())?;
+
+        if token_swap.collateral_pda() != collateral_pda_account.key || !collateral_pda_account.is_signer {
+            return Err(ProgramError::MissingRequiredSignature);
+        }
 
         if *authority_info.key != Self::authority_id(program_id, swap_info.key, token_swap.nonce())?
         {
@@ -1057,6 +1065,7 @@ impl Processor {
                 nonce,
                 fees,
                 swap_curve,
+                collateral_program_id
             }) => {
                 msg!("Instruction: Init");
                 Self::process_initialize(
@@ -1064,6 +1073,7 @@ impl Processor {
                     nonce,
                     fees,
                     swap_curve,
+                    collateral_program_id,
                     accounts,
                     swap_constraints,
                 )

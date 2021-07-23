@@ -42,6 +42,8 @@ pub trait SwapState {
     fn is_trading(&self) -> bool;
     /// The authority allowed to set whether the swap is trading or not.
     fn trading_authority(&self) -> &Pubkey;
+
+    fn collateral_pda(&self) -> &Pubkey;
 }
 
 /// All versions of SwapState
@@ -135,6 +137,9 @@ pub struct SwapV1 {
 
     /// The public key allowed to set is_trading.
     pub trading_authority: Pubkey,
+
+    /// The public key of collateral program to verify the swap origin
+    pub collateral_pda: Pubkey
 }
 
 impl SwapState for SwapV1 {
@@ -189,6 +194,10 @@ impl SwapState for SwapV1 {
     fn trading_authority(&self) -> &Pubkey {
         &self.trading_authority
     }
+
+    fn collateral_pda(&self) -> &Pubkey {
+        &self.collateral_pda
+    }
 }
 
 impl Sealed for SwapV1 {}
@@ -199,7 +208,7 @@ impl IsInitialized for SwapV1 {
 }
 
 impl Pack for SwapV1 {
-    const LEN: usize = 356;
+    const LEN: usize = 388;
 
     fn pack_into_slice(&self, output: &mut [u8]) {
         let output = array_mut_ref![output, 0, 356];
@@ -217,7 +226,8 @@ impl Pack for SwapV1 {
             swap_curve,
             is_trading,
             trading_authority,
-        ) = mut_array_refs![output, 1, 1, 32, 32, 32, 32, 32, 32, 32, 64, 33, 1, 32];
+            collateral_program_pubkey,
+        ) = mut_array_refs![output, 1, 1, 32, 32, 32, 32, 32, 32, 32, 64, 33, 1, 32, 32];
         is_initialized[0] = self.is_initialized as u8;
         nonce[0] = self.nonce;
         token_program_id.copy_from_slice(self.token_program_id.as_ref());
@@ -231,6 +241,7 @@ impl Pack for SwapV1 {
         self.swap_curve.pack_into_slice(&mut swap_curve[..]);
         is_trading[0] = self.is_trading as u8;
         trading_authority.copy_from_slice(self.trading_authority().as_ref());
+        collateral_program_pubkey.copy_from_slice(self.collateral_pda.as_ref());
     }
 
     /// Unpacks a byte buffer into a [SwapV1](struct.SwapV1.html).
@@ -251,7 +262,8 @@ impl Pack for SwapV1 {
             swap_curve,
             is_trading,
             trading_authority,
-        ) = array_refs![input, 1, 1, 32, 32, 32, 32, 32, 32, 32, 64, 33, 1, 32];
+            collateral_program_pubkey
+        ) = array_refs![input, 1, 1, 32, 32, 32, 32, 32, 32, 32, 64, 33, 1, 32, 32];
         Ok(Self {
             is_initialized: match is_initialized {
                 [0] => false,
@@ -274,6 +286,7 @@ impl Pack for SwapV1 {
                 _ => return Err(ProgramError::InvalidAccountData),
             },
             trading_authority: Pubkey::new_from_array(*trading_authority),
+            collateral_pda: Pubkey::new_from_array(*collateral_program_pubkey)
         })
     }
 }

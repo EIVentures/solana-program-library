@@ -27,6 +27,8 @@ pub struct Initialize {
     /// swap curve info for pool, including CurveType and anything
     /// else that may be required
     pub swap_curve: SwapCurve,
+    /// Pubkey of collateral program id
+    pub collateral_program_id: Pubkey,
 }
 
 /// Swap instruction data
@@ -120,18 +122,18 @@ pub enum SwapInstruction {
     Initialize(Initialize),
 
     ///   Swap the tokens in the pool.
-    ///
-    ///   0. `[]` Token-swap
-    ///   1. `[]` swap authority
-    ///   2. `[]` user transfer authority
-    ///   3. `[writable]` token_(A|B) SOURCE Account, amount is transferable by user transfer authority,
-    ///   4. `[writable]` token_(A|B) Base Account to swap INTO.  Must be the SOURCE token.
-    ///   5. `[writable]` token_(A|B) Base Account to swap FROM.  Must be the DESTINATION token.
-    ///   6. `[writable]` token_(A|B) DESTINATION Account assigned to USER as the owner.
-    ///   7. `[writable]` Pool token mint, to generate trading fees
-    ///   8. `[writable]` Fee account, to receive trading fees
-    ///   9. '[]` Token program id
-    ///   10 `[optional, writable]` Host fee account to receive additional trading fees
+    ///   0. `[signer]` PDA owned by the collateral program
+    ///   1. `[]` Token-swap
+    ///   2. `[]` swap authority
+    ///   3. `[]` user transfer authority
+    ///   4. `[writable]` token_(A|B) SOURCE Account, amount is transferable by user transfer authority,
+    ///   5. `[writable]` token_(A|B) Base Account to swap INTO.  Must be the SOURCE token.
+    ///   6. `[writable]` token_(A|B) Base Account to swap FROM.  Must be the DESTINATION token.
+    ///   7. `[writable]` token_(A|B) DESTINATION Account assigned to USER as the owner.
+    ///   8. `[writable]` Pool token mint, to generate trading fees
+    ///   9. `[writable]` Fee account, to receive trading fees
+    ///   10. '[]` Token program id
+    ///   11 `[optional, writable]` Host fee account to receive additional trading fees
     Swap(Swap),
 
     ///   Deposit both types of tokens into the pool.  The output is a "pool"
@@ -215,10 +217,12 @@ impl SwapInstruction {
                     let (fees, rest) = rest.split_at(Fees::LEN);
                     let fees = Fees::unpack_unchecked(fees)?;
                     let swap_curve = SwapCurve::unpack_unchecked(rest)?;
+                    let (collateral_program_id, _rest) = Self::unpack_pubkey(rest)?;
                     Self::Initialize(Initialize {
                         nonce,
                         fees,
                         swap_curve,
+                        collateral_program_id
                     })
                 } else {
                     return Err(SwapError::InvalidInstruction.into());
@@ -284,6 +288,16 @@ impl SwapInstruction {
         })
     }
 
+    fn unpack_pubkey(input: &[u8]) -> Result<(Pubkey, &[u8]), ProgramError> {
+        if input.len() < 32 {
+            return Err(SwapError::InvalidInstruction.into());
+        }
+
+        let (pubkey, rest) = input.split_at(32);
+
+        Ok((Pubkey::new(&pubkey), rest))
+    }
+
     fn unpack_u64(input: &[u8]) -> Result<(u64, &[u8]), ProgramError> {
         if input.len() >= 8 {
             let (amount, rest) = input.split_at(8);
@@ -306,6 +320,7 @@ impl SwapInstruction {
                 nonce,
                 fees,
                 swap_curve,
+                collateral_program_id
             }) => {
                 buf.push(0);
                 buf.push(*nonce);
@@ -315,6 +330,8 @@ impl SwapInstruction {
                 let mut swap_curve_slice = [0u8; SwapCurve::LEN];
                 Pack::pack_into_slice(swap_curve, &mut swap_curve_slice[..]);
                 buf.extend_from_slice(&swap_curve_slice);
+                let mut collateral_program_id_slice = collateral_program_id.to_bytes();
+                buf.extend_from_slice(&collateral_program_id_slice);
             }
             Self::Swap(Swap {
                 amount_in,
